@@ -17,6 +17,7 @@ local previewers = require("telescope.previewers")
 local git = require("bareme.git")
 local tmux = require("bareme.tmux")
 local config = require("bareme.config")
+local buffer = require("bareme.buffer")
 
 -- Worktree picker for switching
 function M.switch_worktree(opts)
@@ -89,17 +90,32 @@ function M.switch_worktree(opts)
           -- Change to the worktree directory
           vim.cmd("cd " .. path)
 
+          -- Clean up buffers from other worktrees
+          local cleaned = buffer.cleanup_foreign_buffers()
+
+          -- Open a default file in the new worktree
+          buffer.open_default_file()
+
+          -- Build notification message
+          local messages = { string.format("Switched to: [%s]", entry.branch) }
+          if cleaned > 0 then
+            table.insert(messages, string.format("Cleaned %d buffer(s)", cleaned))
+          end
+
           -- Switch or create tmux session if configured
           if config.options.auto_switch_tmux and tmux.is_tmux_running() then
             local success, msg = tmux.switch_to_session(session_name, path)
             if success then
-              vim.notify(string.format("Switched to worktree: %s [%s]", path, entry.branch), vim.log.levels.INFO)
+              table.insert(messages, string.format("Session: %s", session_name))
             else
-              vim.notify("Error switching tmux session: " .. msg, vim.log.levels.ERROR)
+              table.insert(messages, "Warning: Failed to switch tmux session")
             end
-          else
-            vim.notify(string.format("Switched to worktree: %s [%s]", path, entry.branch), vim.log.levels.INFO)
           end
+
+          -- Show notification
+          vim.schedule(function()
+            vim.notify(table.concat(messages, " | "), vim.log.levels.INFO)
+          end)
         end)
 
         return true

@@ -21,6 +21,7 @@ A Neovim plugin for seamless git worktree and tmux session management.
 
 ### Using [lazy.nvim](https://github.com/folke/lazy.nvim)
 
+**Production (from GitHub):**
 ```lua
 {
   "nerap/bareme.nvim",
@@ -51,6 +52,28 @@ A Neovim plugin for seamless git worktree and tmux session management.
         },
       },
     })
+  end,
+}
+```
+
+**Development (local path):**
+```lua
+{
+  -- Use local directory for development
+  dir = "/path/to/bareme.nvim.git/main",
+  dependencies = {
+    "nvim-telescope/telescope.nvim",
+  },
+  config = function()
+    require("bareme").setup({
+      tmux_sessionizer = vim.fn.expand("~/.local/scripts/tmux-sessionizer"),
+      auto_switch_tmux = true,
+      auto_kill_session = true,
+      confirm_delete = true,
+    })
+
+    -- Keybinding example: Ctrl-B to switch worktrees
+    vim.keymap.set("n", "<C-b>", "<cmd>WorktreeSwitch<cr>", { desc = "Switch worktree" })
   end,
 }
 ```
@@ -210,6 +233,44 @@ This ensures no session name collisions between branches of the same project.
 }
 ```
 
+## Development
+
+### Reloading the Plugin
+
+When developing the plugin, you can reload it without restarting Neovim:
+
+```vim
+:BaremeReload
+```
+
+This command:
+- Clears all `bareme.*` modules from `package.loaded`
+- Removes and recreates all user commands
+- Reloads the plugin code
+
+### Development Workflow
+
+1. **Make changes** to any Lua file in the plugin
+2. **Save the file** (`:w`)
+3. **Reload the plugin** (`:BaremeReload`)
+4. **Test your changes** immediately
+
+**Example workflow:**
+```vim
+" Edit a file
+:e ~/personal/bareme.nvim.git/main/lua/bareme/git.lua
+" Make changes...
+:w
+
+" Reload the plugin
+:BaremeReload
+
+" Test the changes
+:WorktreeList
+```
+
+**Note:** When using `<leader><leader>` to source your config, it will reload the entire Neovim config, including the plugin.
+
 ## Architecture
 
 ```
@@ -220,7 +281,8 @@ bareme.nvim/
 │       ├── config.lua         # Configuration management
 │       ├── git.lua            # Git worktree utilities
 │       ├── tmux.lua           # Tmux session management
-│       └── telescope.lua      # Telescope pickers
+│       ├── telescope.lua      # Telescope pickers
+│       └── reload.lua         # Development reload utility
 └── plugin/
     └── bareme.lua             # User command definitions
 ```

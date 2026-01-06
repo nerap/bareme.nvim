@@ -1,4 +1,4 @@
--- Command definitions for bareme.nvim
+-- Comman definitions for bareme.nvim
 
 -- Don't load plugin twice
 if vim.g.loaded_bareme then
@@ -45,3 +45,23 @@ vim.api.nvim_create_user_command("WorktreeList", function()
 end, {
   desc = "List all worktrees with session status",
 })
+
+-- Command to cleanup orphaned worktrees (deleted remote branches)
+vim.api.nvim_create_user_command("WorktreeCleanup", function()
+  bareme.cleanup_orphaned()
+end, {
+  desc = "Cleanup worktrees for deleted remote branches",
+})
+
+-- Command to prune worktrees (cleanup + git worktree prune)
+vim.api.nvim_create_user_command("WorktreePrune", function()
+  bareme.prune()
+end, {
+  desc = "Prune worktrees and cleanup deleted branches",
+})
+
+-- Load reload utility for development
+require("bareme.reload")
+
+-- Load debug utility for development
+require("bareme.debug")

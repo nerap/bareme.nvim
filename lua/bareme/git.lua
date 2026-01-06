@@ -70,36 +70,36 @@ function M.list_worktrees()
   local worktrees = {}
   local current = {}
 
+  -- Helper function to save current entry
+  local function save_entry()
+    if current.path and not current.is_bare then
+      table.insert(worktrees, {
+        path = current.path,
+        branch = current.branch or "detached",
+        head = current.head,
+      })
+    end
+  end
+
   for line in output:gmatch("[^\r\n]+") do
     if line:match("^worktree ") then
-      current.path = line:sub(10) -- Remove "worktree " prefix
+      -- Save previous entry before starting new one
+      save_entry()
+      -- Start new entry
+      current = {
+        path = line:sub(10), -- Remove "worktree " prefix
+      }
     elseif line:match("^HEAD ") then
       current.head = line:sub(6)
     elseif line:match("^branch ") then
       current.branch = line:sub(8):match("refs/heads/(.+)")
     elseif line:match("^bare") then
       current.is_bare = true
-    elseif line == "" then
-      -- End of entry
-      if current.path and not current.is_bare then
-        table.insert(worktrees, {
-          path = current.path,
-          branch = current.branch or "detached",
-          head = current.head,
-        })
-      end
-      current = {}
     end
   end
 
-  -- Handle last entry if output doesn't end with blank line
-  if current.path and not current.is_bare then
-    table.insert(worktrees, {
-      path = current.path,
-      branch = current.branch or "detached",
-      head = current.head,
-    })
-  end
+  -- Save the last entry
+  save_entry()
 
   return worktrees
 end
@@ -111,10 +111,9 @@ function M.create_worktree(branch_name, path)
     return false, "Not in a git worktree"
   end
 
-  -- If path not specified, create it next to the bare repo
+  -- If path not specified, create it inside the bare repo directory
   if not path then
-    local parent_dir = vim.fn.fnamemodify(bare_repo, ":h")
-    path = string.format("%s/%s", parent_dir, branch_name)
+    path = string.format("%s/%s", bare_repo, branch_name)
   end
 
   local cmd = string.format("git -C '%s' worktree add '%s' -b '%s' 2>&1", bare_repo, path, branch_name)
@@ -134,10 +133,9 @@ function M.create_worktree_from_branch(branch_name, path)
     return false, "Not in a git worktree"
   end
 
-  -- If path not specified, create it next to the bare repo
+  -- If path not specified, create it inside the bare repo directory
   if not path then
-    local parent_dir = vim.fn.fnamemodify(bare_repo, ":h")
-    path = string.format("%s/%s", parent_dir, branch_name)
+    path = string.format("%s/%s", bare_repo, branch_name)
   end
 
   local cmd = string.format("git -C '%s' worktree add '%s' '%s' 2>&1", bare_repo, path, branch_name)
