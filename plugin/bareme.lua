@@ -6,6 +6,7 @@ if vim.g.loaded_bareme then
 end
 vim.g.loaded_bareme = 1
 
+
 local bareme = require("bareme")
 
 -- Command to create a new worktree with a new branch
