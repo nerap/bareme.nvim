@@ -74,13 +74,13 @@ function M.switch_to_session(session_name, path)
   return vim.v.shell_error == 0, "Switched to session: " .. session_name
 end
 
--- Create a new tmux session (mirrors tmux-sessionizer behavior)
+-- Create a new tmux session with 2 windows (terminal+claude, nvim)
 function M.create_session(session_name, path)
   if M.session_exists(session_name) then
     return true, "Session already exists"
   end
 
-  -- Create new session with vertical split
+  -- Create new session detached with first window (terminal)
   local cmd = string.format("tmux new-session -ds '%s' -c '%s'", session_name, path)
   vim.fn.system(cmd)
 
@@ -88,25 +88,19 @@ function M.create_session(session_name, path)
     return false, "Failed to create tmux session"
   end
 
-  -- Create vertical split (70/30)
-  cmd = string.format("tmux split-window -t '%s' -h -p 30 -c '%s'", session_name, path)
+  -- Window 1: Split for Claude in right pane (70/30)
+  cmd = string.format("tmux split-window -t '%s:1' -h -p 30 -c '%s' 'claude --continue || claude'", session_name, path)
   vim.fn.system(cmd)
 
-  -- Left pane: Neovim
-  cmd = string.format("tmux send-keys -t '%s:0.0' 'nvim' C-m", session_name)
+  -- Create window 2 with nvim
+  cmd = string.format("tmux new-window -t '%s:2' -c '%s'", session_name, path)
   vim.fn.system(cmd)
 
-  -- Right pane: Claude CLI
-  local claude_dir = path .. "/.claude"
-  if vim.fn.isdirectory(claude_dir) == 1 then
-    cmd = string.format("tmux send-keys -t '%s:0.1' 'claude --resume' C-m", session_name)
-  else
-    cmd = string.format("tmux send-keys -t '%s:0.1' 'claude' C-m", session_name)
-  end
+  cmd = string.format("tmux send-keys -t '%s:2' 'nvim .' C-m", session_name)
   vim.fn.system(cmd)
 
-  -- Focus left pane (Neovim)
-  cmd = string.format("tmux select-pane -t '%s:0.0'", session_name)
+  -- Focus on window 2 (nvim)
+  cmd = string.format("tmux select-window -t '%s:2'", session_name)
   vim.fn.system(cmd)
 
   return true, "Created session: " .. session_name
