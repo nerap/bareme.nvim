@@ -45,6 +45,13 @@ end
 
 -- Clean up orphaned worktrees
 function M.cleanup_orphaned_worktrees()
+  -- First, fetch from remote to get latest branch info
+  vim.notify("Fetching from remote...", vim.log.levels.INFO)
+  local fetch_output = vim.fn.system("git fetch --prune 2>&1")
+  if vim.v.shell_error ~= 0 then
+    vim.notify("Warning: Failed to fetch from remote: " .. fetch_output, vim.log.levels.WARN)
+  end
+
   local orphaned = M.find_orphaned_worktrees()
 
   if #orphaned == 0 then
@@ -67,6 +74,7 @@ function M.cleanup_orphaned_worktrees()
   -- Clean up each orphaned worktree
   local cleaned = 0
   local failed = 0
+  local sessions_killed = 0
 
   for _, wt in ipairs(orphaned) do
     -- Get session name before deleting
@@ -76,12 +84,11 @@ function M.cleanup_orphaned_worktrees()
     local success, err = git.delete_worktree(wt.path)
     if success then
       cleaned = cleaned + 1
-      vim.notify(string.format("Deleted: %s [%s]", wt.path, wt.branch), vim.log.levels.INFO)
 
       -- Kill tmux session if it exists
       if tmux.session_exists(session_name) then
         tmux.kill_session(session_name)
-        vim.notify(string.format("Killed session: %s", session_name), vim.log.levels.INFO)
+        sessions_killed = sessions_killed + 1
       end
     else
       failed = failed + 1
@@ -89,7 +96,15 @@ function M.cleanup_orphaned_worktrees()
     end
   end
 
-  vim.notify(string.format("Cleanup complete: %d cleaned, %d failed", cleaned, failed), vim.log.levels.INFO)
+  -- Single summary notification
+  local summary = string.format("Cleanup complete: %d worktree(s) deleted", cleaned)
+  if sessions_killed > 0 then
+    summary = summary .. string.format(", %d session(s) killed", sessions_killed)
+  end
+  if failed > 0 then
+    summary = summary .. string.format(", %d failed", failed)
+  end
+  vim.notify(summary, vim.log.levels.INFO)
 end
 
 -- Prune worktrees (cleanup orphaned + run git worktree prune)
