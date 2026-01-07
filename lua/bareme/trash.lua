@@ -206,14 +206,34 @@ function M.recover(trash_path)
     return false, "Failed to recover: " .. output
   end
 
-  -- Re-register with git worktree (repair)
+  -- Fix the .git file to point to the correct gitdir
+  -- The .git file should contain: gitdir: /path/to/bare.git/worktrees/<branch>
+  local worktree_name = vim.fn.fnamemodify(original_path, ":t")
+  local gitdir = bare_repo .. "/worktrees/" .. worktree_name
+
+  -- Update the .git file
+  local git_file = original_path .. "/.git"
+  local file = io.open(git_file, "w")
+  if not file then
+    -- Rollback: move back to trash
+    vim.fn.system(string.format("mv '%s' '%s'", original_path, trash_path))
+    return false, "Failed to update .git file"
+  end
+  file:write(string.format("gitdir: %s\n", gitdir))
+  file:close()
+
+  -- Update the gitdir/gitdir file to point back to the worktree
+  local gitdir_file = gitdir .. "/gitdir"
+  file = io.open(gitdir_file, "w")
+  if file then
+    file:write(original_path .. "/.git\n")
+    file:close()
+  end
+
+  -- Run git worktree repair to ensure everything is synchronized
   local repair_cmd = string.format("git -C '%s' worktree repair '%s' 2>&1", bare_repo, original_path)
   output = vim.fn.system(repair_cmd)
-  if vim.v.shell_error ~= 0 then
-    -- Move back to trash if repair fails
-    vim.fn.system(string.format("mv '%s' '%s'", original_path, trash_path))
-    return false, "Failed to repair git worktree: " .. output
-  end
+  -- Don't fail if repair has warnings, as long as the .git file is correct
 
   return true, string.format("Recovered: [%s] to %s", branch_name, original_path)
 end

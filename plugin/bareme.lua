@@ -60,6 +60,61 @@ end, {
   desc = "Prune worktrees and cleanup deleted branches",
 })
 
+-- Trash management commands
+vim.api.nvim_create_user_command("WorktreeRecover", function()
+  bareme.recover_worktree()
+end, {
+  desc = "Recover a worktree from trash",
+})
+
+vim.api.nvim_create_user_command("WorktreeEmptyTrash", function()
+  bareme.empty_trash()
+end, {
+  desc = "Permanently delete all trashed worktrees",
+})
+
+vim.api.nvim_create_user_command("WorktreeTrashStatus", function()
+  bareme.trash_status()
+end, {
+  desc = "Show trash status (count and size)",
+})
+
+-- Environment and project commands
+vim.api.nvim_create_user_command("WorktreeInitEnv", function()
+  bareme.init_env_template()
+end, {
+  desc = "Create default .env.template in bare repo root",
+})
+
+vim.api.nvim_create_user_command("WorktreePorts", function()
+  bareme.show_ports()
+end, {
+  desc = "Show port allocations for all worktrees",
+})
+
+-- Docker commands
+vim.api.nvim_create_user_command("WorktreeDockerRestart", function()
+  bareme.docker_restart()
+end, {
+  desc = "Restart Docker services in current worktree",
+})
+
+vim.api.nvim_create_user_command("WorktreeDockerStatus", function()
+  bareme.docker_status()
+end, {
+  desc = "Show Docker services status",
+})
+
+vim.api.nvim_create_user_command("WorktreeDockerLogs", function(opts)
+  local args = vim.split(opts.args, " ")
+  local service = args[1]
+  local lines = tonumber(args[2]) or 100
+  bareme.docker_logs(service, lines)
+end, {
+  nargs = "*",
+  desc = "Show Docker logs (usage: WorktreeDockerLogs [service] [lines])",
+})
+
 -- Load reload utility for development
 require("bareme.reload")
 
