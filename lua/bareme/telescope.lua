@@ -321,32 +321,35 @@ function M.switch_worktree(opts)
           local path = entry.path
           local session_name = entry.session_name
 
-          -- IMPORTANT: Clean up buffers BEFORE changing directory
-          -- This ensures we catch all terminal buffers tied to the old worktree
-          local cleaned = buffer.cleanup_foreign_buffers()
-
-          -- Change to the worktree directory
-          vim.cmd("cd " .. path)
-
-          -- Clean again after cd to catch any buffers that are now foreign
-          cleaned = cleaned + buffer.cleanup_foreign_buffers()
-
-          -- Open a default file in the new worktree
-          buffer.open_default_file()
-
           -- Build notification message
           local messages = { string.format("Switched to: [%s]", entry.branch) }
-          if cleaned > 0 then
-            table.insert(messages, string.format("Cleaned %d buffer(s)", cleaned))
-          end
 
           -- Switch or create tmux session if configured
           if config.options.auto_switch_tmux and tmux.is_tmux_running() then
+            -- When switching tmux sessions, we DON'T change CWD in current nvim
+            -- because we're switching to a different session with its own nvim instance
             local success, msg = tmux.switch_to_session(session_name, path)
             if success then
               table.insert(messages, string.format("Session: %s", session_name))
             else
               table.insert(messages, "Warning: Failed to switch tmux session")
+            end
+          else
+            -- Not using tmux or tmux not running - change CWD in current nvim
+            -- IMPORTANT: Clean up buffers BEFORE changing directory
+            local cleaned = buffer.cleanup_foreign_buffers()
+
+            -- Change to the worktree directory
+            vim.cmd("cd " .. path)
+
+            -- Clean again after cd to catch any buffers that are now foreign
+            cleaned = cleaned + buffer.cleanup_foreign_buffers()
+
+            -- Open a default file in the new worktree
+            buffer.open_default_file()
+
+            if cleaned > 0 then
+              table.insert(messages, string.format("Cleaned %d buffer(s)", cleaned))
             end
           end
 

@@ -206,12 +206,58 @@ function M.recover(trash_path)
     return false, "Failed to recover: " .. output
   end
 
-  -- Fix the .git file to point to the correct gitdir
-  -- The .git file should contain: gitdir: /path/to/bare.git/worktrees/<branch>
-  local worktree_name = vim.fn.fnamemodify(original_path, ":t")
-  local gitdir = bare_repo .. "/worktrees/" .. worktree_name
+  -- Find the gitdir name in the bare repo's worktrees folder
+  -- Git uses branch name (sanitized) as the gitdir name, not the folder name
+  local gitdir = nil
+  local worktrees_dir = bare_repo .. "/worktrees"
 
-  -- Update the .git file
+  -- Check if worktree gitdir already exists for this branch
+  local branch_gitdir = worktrees_dir .. "/" .. branch_name
+  if vim.fn.isdirectory(branch_gitdir) == 1 then
+    gitdir = branch_gitdir
+  else
+    -- Try sanitized branch name (slashes become dashes, etc.)
+    local sanitized = branch_name:gsub("/", "-"):gsub("[^%w%-_]", "_")
+    local sanitized_gitdir = worktrees_dir .. "/" .. sanitized
+    if vim.fn.isdirectory(sanitized_gitdir) == 1 then
+      gitdir = sanitized_gitdir
+    else
+      -- List all gitdirs and try to find the right one by reading the gitdir file
+      local entries = vim.fn.readdir(worktrees_dir)
+      for _, entry in ipairs(entries) do
+        local gitdir_file = worktrees_dir .. "/" .. entry .. "/gitdir"
+        if vim.fn.filereadable(gitdir_file) == 1 then
+          local f = io.open(gitdir_file, "r")
+          if f then
+            local content = f:read("*all")
+            f:close()
+            -- Check if this gitdir points to our original path
+            if content:match(vim.pesc(original_path)) then
+              gitdir = worktrees_dir .. "/" .. entry
+              break
+            end
+          end
+        end
+      end
+    end
+  end
+
+  -- If no gitdir found, recreate the worktree using git
+  if not gitdir then
+    -- Remove the recovered directory
+    vim.fn.system(string.format("rm -rf '%s'", original_path))
+
+    -- Recreate worktree using git
+    local create_cmd = string.format("git -C '%s' worktree add '%s' '%s' 2>&1", bare_repo, original_path, branch_name)
+    output = vim.fn.system(create_cmd)
+    if vim.v.shell_error ~= 0 then
+      return false, "Failed to recreate worktree: " .. output
+    end
+
+    return true, string.format("Recovered by recreating: [%s] to %s", branch_name, original_path)
+  end
+
+  -- Update the .git file to point to the correct gitdir
   local git_file = original_path .. "/.git"
   local file = io.open(git_file, "w")
   if not file then
@@ -231,7 +277,7 @@ function M.recover(trash_path)
   end
 
   -- Run git worktree repair to ensure everything is synchronized
-  local repair_cmd = string.format("git -C '%s' worktree repair '%s' 2>&1", bare_repo, original_path)
+  local repair_cmd = string.format("git -C '%s' worktree repair 2>&1", bare_repo)
   output = vim.fn.system(repair_cmd)
   -- Don't fail if repair has warnings, as long as the .git file is correct
 
