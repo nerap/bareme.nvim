@@ -1,4 +1,4 @@
--- Comman definitions for bareme.nvim
+-- Command definitions for bareme.nvim
 
 -- Don't load plugin twice
 if vim.g.loaded_bareme then
