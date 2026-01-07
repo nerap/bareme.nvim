@@ -23,13 +23,40 @@ local buffer = require("bareme.buffer")
 -- Get git diff stats for a worktree (compared to main/master)
 local function get_diff_stats(worktree_path)
   -- Find base branch (main or master)
-  local base_branch = vim.fn.system(string.format(
-    "git -C '%s' rev-parse --verify main 2>/dev/null && echo main || echo master",
+  local base_branch = "main"
+  local check_main = vim.fn.system(string.format(
+    "git -C '%s' rev-parse --verify main 2>/dev/null",
     worktree_path
   ))
-  base_branch = vim.trim(base_branch)
+  if vim.v.shell_error ~= 0 then
+    base_branch = "master"
+  end
 
-  -- Get diff stats
+  -- Get current branch
+  local current_branch = vim.fn.system(string.format(
+    "git -C '%s' branch --show-current 2>/dev/null",
+    worktree_path
+  ))
+  current_branch = vim.trim(current_branch)
+
+  -- If current branch is the base branch, check for uncommitted changes
+  if current_branch == base_branch then
+    local uncommitted = vim.fn.system(string.format(
+      "git -C '%s' diff --shortstat 2>/dev/null",
+      worktree_path
+    ))
+    uncommitted = vim.trim(uncommitted)
+
+    if uncommitted ~= "" then
+      local insertions = tonumber(uncommitted:match("(%d+) insertion")) or 0
+      local deletions = tonumber(uncommitted:match("(%d+) deletion")) or 0
+      return { insertions = insertions, deletions = deletions, uncommitted = true }
+    end
+
+    return { insertions = 0, deletions = 0, is_base = true }
+  end
+
+  -- Get diff stats compared to base
   local cmd = string.format(
     "git -C '%s' diff --shortstat %s...HEAD 2>/dev/null",
     worktree_path,
@@ -37,7 +64,7 @@ local function get_diff_stats(worktree_path)
   )
   local output = vim.fn.system(cmd)
 
-  if vim.v.shell_error ~= 0 or output == "" then
+  if vim.v.shell_error ~= 0 or output == "" or vim.trim(output) == "" then
     return { insertions = 0, deletions = 0 }
   end
 
@@ -210,7 +237,18 @@ function M.switch_worktree(opts)
         entry_maker = function(entry)
           -- Build diff display string
           local diff_str = ""
-          if entry.diff_stats.insertions > 0 or entry.diff_stats.deletions > 0 then
+          if entry.diff_stats.is_base then
+            diff_str = "(base)"
+          elseif entry.diff_stats.uncommitted then
+            local parts = {}
+            if entry.diff_stats.insertions > 0 then
+              table.insert(parts, string.format("+%d", entry.diff_stats.insertions))
+            end
+            if entry.diff_stats.deletions > 0 then
+              table.insert(parts, string.format("-%d", entry.diff_stats.deletions))
+            end
+            diff_str = string.format("%s (uncommitted)", table.concat(parts, " "))
+          elseif entry.diff_stats.insertions > 0 or entry.diff_stats.deletions > 0 then
             local parts = {}
             if entry.diff_stats.insertions > 0 then
               table.insert(parts, string.format("+%d", entry.diff_stats.insertions))
@@ -230,7 +268,7 @@ function M.switch_worktree(opts)
 
           -- Build simple display string
           local display_str = string.format(
-            "%-25s  %-25s  %-12s  %s",
+            "%-25s  %-30s  %-12s  %s",
             entry.branch,
             diff_str,
             entry.time_ago,
@@ -379,7 +417,18 @@ function M.list_worktrees(opts)
         entry_maker = function(entry)
           -- Build diff display string
           local diff_str = ""
-          if entry.diff_stats.insertions > 0 or entry.diff_stats.deletions > 0 then
+          if entry.diff_stats.is_base then
+            diff_str = "(base)"
+          elseif entry.diff_stats.uncommitted then
+            local parts = {}
+            if entry.diff_stats.insertions > 0 then
+              table.insert(parts, string.format("+%d", entry.diff_stats.insertions))
+            end
+            if entry.diff_stats.deletions > 0 then
+              table.insert(parts, string.format("-%d", entry.diff_stats.deletions))
+            end
+            diff_str = string.format("%s (uncommitted)", table.concat(parts, " "))
+          elseif entry.diff_stats.insertions > 0 or entry.diff_stats.deletions > 0 then
             local parts = {}
             if entry.diff_stats.insertions > 0 then
               table.insert(parts, string.format("+%d", entry.diff_stats.insertions))
@@ -407,7 +456,7 @@ function M.list_worktrees(opts)
 
           -- Build simple display string
           local display_str = string.format(
-            "%-25s  %-25s  %-12s  %s",
+            "%-25s  %-30s  %-12s  %s",
             entry.branch,
             diff_str,
             entry.time_ago,
