@@ -99,8 +99,8 @@ function M.create_session(session_name, path)
   cmd = string.format("tmux send-keys -t '%s:2' 'nvim .' C-m", session_name)
   vim.fn.system(cmd)
 
-  -- Focus on window 2 (nvim)
-  cmd = string.format("tmux select-window -t '%s:2'", session_name)
+  -- Focus on window 1 (terminal + claude)
+  cmd = string.format("tmux select-window -t '%s:1'", session_name)
   vim.fn.system(cmd)
 
   return true, "Created session: " .. session_name
