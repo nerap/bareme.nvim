@@ -321,11 +321,15 @@ function M.switch_worktree(opts)
           local path = entry.path
           local session_name = entry.session_name
 
+          -- IMPORTANT: Clean up buffers BEFORE changing directory
+          -- This ensures we catch all terminal buffers tied to the old worktree
+          local cleaned = buffer.cleanup_foreign_buffers()
+
           -- Change to the worktree directory
           vim.cmd("cd " .. path)
 
-          -- Clean up buffers from other worktrees
-          local cleaned = buffer.cleanup_foreign_buffers()
+          -- Clean again after cd to catch any buffers that are now foreign
+          cleaned = cleaned + buffer.cleanup_foreign_buffers()
 
           -- Open a default file in the new worktree
           buffer.open_default_file()
