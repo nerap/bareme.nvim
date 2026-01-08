@@ -115,6 +115,49 @@ end, {
   desc = "Show Docker logs (usage: WorktreeDockerLogs [service] [lines])",
 })
 
+-- Observability commands
+vim.api.nvim_create_user_command("WorktreeHealth", function()
+  bareme.show_health()
+end, {
+  desc = "Show worktree health summary",
+})
+
+vim.api.nvim_create_user_command("BaremeLog", function(opts)
+  local lines = tonumber(opts.args) or 100
+  bareme.show_log(lines)
+end, {
+  nargs = "?",
+  desc = "Show bareme event log (usage: BaremeLog [lines])",
+})
+
+vim.api.nvim_create_user_command("ClaudeStats", function()
+  bareme.show_claude_stats()
+end, {
+  desc = "Show Claude Code session statistics",
+})
+
+vim.api.nvim_create_user_command("BaremeMonitor", function()
+  bareme.show_monitor()
+end, {
+  desc = "Show real-time monitoring dashboard",
+})
+
+vim.api.nvim_create_user_command("ClaudeInstallHooks", function()
+  bareme.install_claude_hooks()
+end, {
+  desc = "Install Claude Code hooks in all existing worktrees",
+})
+
+vim.api.nvim_create_user_command("BaremeCleanupPorts", function()
+  bareme.cleanup_orphaned_ports()
+end, {
+  desc = "Clean up orphaned port allocations",
+})
+
+-- Start Claude monitoring on plugin load
+local claude_monitor = require("bareme.claude_monitor")
+claude_monitor.start_watching()
+
 -- Load reload utility for development
 require("bareme.reload")
 

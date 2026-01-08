@@ -1,6 +1,9 @@
 -- Docker Compose management for worktrees
 local M = {}
 
+local logger = require("bareme.logger")
+local events = require("bareme.events")
+
 -- Check if docker-compose is available
 function M.is_available()
   -- Try docker compose (new command)
@@ -48,26 +51,48 @@ end
 -- Start Docker services
 function M.start_services(worktree_path)
   if not M.is_available() then
+    logger.warn("docker", "docker-compose not available")
     return false, "docker-compose not installed"
   end
 
   local compose_file = find_compose_file(worktree_path)
   if not compose_file then
+    logger.warn("docker", string.format("No compose file in %s", worktree_path))
     return false, "No docker-compose.yml found"
   end
+
+  logger.info("docker", string.format("Starting services in %s", worktree_path))
+  local start_time = vim.loop.hrtime()
 
   local compose_cmd = M.get_compose_cmd()
   local cmd = string.format("cd '%s' && %s -f '%s' up -d 2>&1", worktree_path, compose_cmd, compose_file)
 
   local handle = io.popen(cmd)
   if not handle then
+    logger.error("docker", "Failed to execute docker-compose")
     return false, "Failed to execute docker-compose"
   end
 
   local output = handle:read("*all")
   local success = handle:close()
 
-  return success, success and "Docker services started" or output
+  local duration = (vim.loop.hrtime() - start_time) / 1e9 -- Convert to seconds
+
+  if success then
+    logger.info("docker", string.format("Services started in %.2fs", duration))
+    events.emit(events.TYPES.DOCKER_STARTED, {
+      worktree = vim.fn.fnamemodify(worktree_path, ":t"),
+      duration = duration,
+    })
+    return true, "Docker services started"
+  else
+    logger.error("docker", string.format("Failed to start services: %s", output))
+    events.emit(events.TYPES.DOCKER_FAILED, {
+      worktree = vim.fn.fnamemodify(worktree_path, ":t"),
+      error = output,
+    })
+    return false, output
+  end
 end
 
 -- Stop Docker services
@@ -81,6 +106,8 @@ function M.stop_services(worktree_path, remove_volumes)
     return false, "No docker-compose.yml found"
   end
 
+  logger.info("docker", string.format("Stopping services in %s", worktree_path))
+
   local compose_cmd = M.get_compose_cmd()
   local volumes_flag = remove_volumes and " -v" or ""
   local cmd = string.format(
@@ -93,11 +120,22 @@ function M.stop_services(worktree_path, remove_volumes)
 
   local handle = io.popen(cmd)
   if not handle then
+    logger.error("docker", "Failed to execute docker-compose")
     return false, "Failed to execute docker-compose"
   end
 
   local output = handle:read("*all")
   local success = handle:close()
+
+  if success then
+    logger.info("docker", "Services stopped successfully")
+    events.emit(events.TYPES.DOCKER_STOPPED, {
+      worktree = vim.fn.fnamemodify(worktree_path, ":t"),
+      removed_volumes = remove_volumes or false,
+    })
+  else
+    logger.error("docker", string.format("Failed to stop services: %s", output))
+  end
 
   return success, success and "Docker services stopped" or output
 end

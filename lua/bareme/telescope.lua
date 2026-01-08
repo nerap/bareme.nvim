@@ -321,6 +321,13 @@ function M.switch_worktree(opts)
           local path = entry.path
           local session_name = entry.session_name
 
+          -- Emit worktree switch event
+          local events = require("bareme.events")
+          events.emit(events.TYPES.WORKTREE_SWITCHED, {
+            worktree = entry.branch,
+            path = path,
+          })
+
           -- Build notification message
           local messages = { string.format("Switched to: [%s]", entry.branch) }
 

@@ -1,6 +1,9 @@
 -- Port allocation and management for worktrees
 local M = {}
 
+local logger = require("bareme.logger")
+local events = require("bareme.events")
+
 -- Default port ranges for common services
 local DEFAULT_RANGES = {
   app = { start = 3000, ["end"] = 3099 },
@@ -94,11 +97,14 @@ function M.allocate_ports(project_name, branch_name, port_ranges)
 
   -- Return existing allocation if present
   if allocations[key] then
+    logger.debug("ports", string.format("Using existing allocation for %s", key), allocations[key])
     return allocations[key]
   end
 
   -- Use default ranges if not provided
   port_ranges = port_ranges or DEFAULT_RANGES
+
+  logger.info("ports", string.format("Allocating ports for %s", key))
 
   -- Allocate a port for each service
   local ports = {}
@@ -106,7 +112,16 @@ function M.allocate_ports(project_name, branch_name, port_ranges)
     local port, err = M.find_free_port(range, allocations)
     if port then
       ports[service] = port
+      logger.info("ports", string.format("Allocated %s:%d for %s", service, port, key))
+
+      -- Emit event
+      events.emit(events.TYPES.PORT_ALLOCATED, {
+        worktree = key,
+        service = service,
+        port = port,
+      })
     else
+      logger.error("ports", string.format("Failed to allocate %s port for %s: %s", service, key, err))
       -- If we can't allocate all ports, clean up and return error
       return nil, string.format("Failed to allocate %s port: %s", service, err)
     end
@@ -125,11 +140,24 @@ function M.release_ports(project_name, branch_name)
   local key = project_name .. "/" .. branch_name
 
   if allocations[key] then
+    local ports = allocations[key]
+    logger.info("ports", string.format("Releasing ports for %s", key), ports)
+
+    -- Emit events for each released port
+    for service, port in pairs(ports) do
+      events.emit(events.TYPES.PORT_RELEASED, {
+        worktree = key,
+        service = service,
+        port = port,
+      })
+    end
+
     allocations[key] = nil
     M.save_allocations(allocations)
     return true
   end
 
+  logger.warn("ports", string.format("No ports found to release for %s", key))
   return false
 end
 

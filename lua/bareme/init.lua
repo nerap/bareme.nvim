@@ -10,6 +10,10 @@ local ports = require("bareme.ports")
 local env = require("bareme.env")
 local docker = require("bareme.docker")
 local trash = require("bareme.trash")
+local logger = require("bareme.logger")
+local events = require("bareme.events")
+local health = require("bareme.health")
+local claude_monitor = require("bareme.claude_monitor")
 
 -- Setup function to configure the plugin
 function M.setup(opts)
@@ -96,6 +100,11 @@ function M.create_worktree(branch_name, create_new)
     end
   end
 
+  -- Install Claude Code hooks
+  if claude_monitor.install_hooks(worktree_path, branch_name) then
+    table.insert(messages, "Claude hooks installed")
+  end
+
   -- Run onCreate hook if defined
   local hooks = project.get_hooks(proj.config)
   if hooks.onCreate then
@@ -106,6 +115,12 @@ function M.create_worktree(branch_name, create_new)
       vim.notify("onCreate hook failed: " .. (hook_output or "unknown"), vim.log.levels.WARN)
     end
   end
+
+  -- Emit worktree created event
+  events.emit(events.TYPES.WORKTREE_CREATED, {
+    worktree = branch_name,
+    path = worktree_path,
+  })
 
   -- Auto-switch to the new worktree
   vim.cmd("cd " .. worktree_path)
@@ -562,6 +577,209 @@ function M.docker_status()
     vim.notify(output, vim.log.levels.INFO)
   else
     vim.notify("Failed to get status", vim.log.levels.ERROR)
+  end
+end
+
+-- Observability functions
+
+-- Show health summary
+function M.show_health()
+  local summary = health.get_summary()
+
+  local lines = { "Bareme Health Summary", "" }
+
+  if summary.healthy then
+    table.insert(lines, "✓ Status: Healthy")
+  else
+    table.insert(lines, "✗ Status: Issues Detected")
+  end
+
+  table.insert(lines, "")
+
+  if #summary.issues > 0 then
+    table.insert(lines, "Issues:")
+    for _, issue in ipairs(summary.issues) do
+      table.insert(lines, "  ✗ " .. issue)
+    end
+    table.insert(lines, "")
+  end
+
+  if #summary.warnings > 0 then
+    table.insert(lines, "Warnings:")
+    for _, warning in ipairs(summary.warnings) do
+      table.insert(lines, "  ⚠ " .. warning)
+    end
+    table.insert(lines, "")
+  end
+
+  -- Show stats
+  table.insert(lines, "Statistics:")
+  table.insert(lines, string.format("  Worktrees: %d", summary.stats.worktrees.total))
+  table.insert(lines, string.format("  Ports allocated: %d", summary.stats.ports.total_allocated))
+  table.insert(lines, string.format("  Docker containers: %d", #summary.stats.docker.containers))
+  table.insert(lines, string.format("  Trash: %d worktree(s), %dMB", summary.stats.trash.count, summary.stats.trash.size_mb))
+
+  table.insert(lines, "")
+  table.insert(lines, "Run :checkhealth bareme for detailed checks")
+
+  vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
+end
+
+-- Show event log
+function M.show_log(lines)
+  lines = lines or 50
+  local log_events = events.read_events(lines)
+
+  if #log_events == 0 then
+    vim.notify("No events in log", vim.log.levels.INFO)
+    return
+  end
+
+  local formatted = {}
+  table.insert(formatted, string.format("Recent Events (last %d):", lines))
+  table.insert(formatted, "")
+
+  for _, event in ipairs(log_events) do
+    table.insert(formatted, events.format_event(event))
+  end
+
+  -- Show in new buffer
+  vim.cmd("new")
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, formatted)
+  vim.bo.buftype = "nofile"
+  vim.bo.bufhidden = "wipe"
+  vim.bo.filetype = "bareme-log"
+  vim.bo.modifiable = false
+end
+
+-- Show Claude stats
+function M.show_claude_stats()
+  local stats = claude_monitor.get_session_stats()
+  local notifications = claude_monitor.get_pending_notifications()
+
+  local lines = { "Claude Code Sessions", "" }
+
+  if vim.tbl_isempty(stats) then
+    table.insert(lines, "No Claude sessions detected")
+    table.insert(lines, "")
+    table.insert(lines, "Claude hooks will auto-report activity when used")
+  else
+    -- Show notifications first
+    if #notifications > 0 then
+      table.insert(lines, string.format("🔔 %d session(s) need input:", #notifications))
+      for _, notif in ipairs(notifications) do
+        local age_str = string.format("%dm ago", math.floor(notif.age / 60))
+        table.insert(lines, string.format("  [%s] %s", notif.worktree, age_str))
+      end
+      table.insert(lines, "")
+    end
+
+    -- Show all sessions
+    table.insert(lines, "Sessions:")
+    for worktree, wt_stats in pairs(stats) do
+      local status_icon = "💤"
+      if wt_stats.status == "active" then
+        status_icon = "🟢"
+      elseif wt_stats.status == "needs_input" then
+        status_icon = "🔔"
+      elseif wt_stats.status == "paused" then
+        status_icon = "⏸"
+      end
+
+      local age_str = "now"
+      if wt_stats.last_activity and wt_stats.last_activity > 0 then
+        local age_min = math.floor((os.time() - wt_stats.last_activity) / 60)
+        if age_min < 1 then
+          age_str = "now"
+        elseif age_min < 60 then
+          age_str = string.format("%dm ago", age_min)
+        else
+          age_str = string.format("%dh ago", math.floor(age_min / 60))
+        end
+      end
+
+      -- Build status line based on available data
+      local status_line
+      if wt_stats.message_count and wt_stats.message_count > 0 then
+        status_line = string.format("  %s [%s] %d messages, %s", status_icon, worktree, wt_stats.message_count, age_str)
+      elseif wt_stats.detected == "process" then
+        status_line = string.format("  %s [%s] active (detected), %s", status_icon, worktree, age_str)
+      else
+        status_line = string.format("  %s [%s] %s", status_icon, worktree, age_str)
+      end
+
+      table.insert(lines, status_line)
+    end
+  end
+
+  vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
+end
+
+-- Show monitor dashboard
+function M.show_monitor()
+  local monitor = require("bareme.ui.monitor")
+  monitor.start()
+end
+
+-- Install Claude hooks in existing worktrees
+function M.install_claude_hooks()
+  local worktrees = git.list_worktrees()
+  local installed = 0
+  local skipped = 0
+
+  for _, wt in ipairs(worktrees) do
+    if claude_monitor.has_hooks(wt.path) then
+      skipped = skipped + 1
+    else
+      if claude_monitor.install_hooks(wt.path, wt.branch) then
+        installed = installed + 1
+      end
+    end
+  end
+
+  vim.notify(
+    string.format("Claude hooks: %d installed, %d already existed", installed, skipped),
+    vim.log.levels.INFO
+  )
+end
+
+-- Clean up orphaned port allocations
+function M.cleanup_orphaned_ports()
+  local port_module = require("bareme.ports")
+  local allocations = port_module.load_allocations()
+  local worktrees = git.list_worktrees()
+
+  -- Build a set of valid worktree keys
+  local valid_keys = {}
+  for _, wt in ipairs(worktrees) do
+    local bare_repo = git.get_bare_repo_path()
+    if bare_repo then
+      local project_name = vim.fn.fnamemodify(bare_repo, ":t:r")
+      local key = project_name .. "/" .. wt.branch
+      valid_keys[key] = true
+    end
+  end
+
+  -- Find and release orphaned ports
+  local released = 0
+  for worktree_key, port_map in pairs(allocations) do
+    if not valid_keys[worktree_key] then
+      -- Extract project and branch from key
+      local project, branch = worktree_key:match("([^/]+)/(.+)")
+      if project and branch then
+        port_module.release_ports(project, branch)
+        released = released + vim.tbl_count(port_map)
+      end
+    end
+  end
+
+  if released > 0 then
+    vim.notify(
+      string.format("Cleaned up %d orphaned port allocation(s)", released),
+      vim.log.levels.INFO
+    )
+  else
+    vim.notify("No orphaned ports found", vim.log.levels.INFO)
   end
 end
 
