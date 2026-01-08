@@ -6,6 +6,7 @@ local components = require("bareme.ui.components")
 -- Card state icons
 local ICONS = {
   active = "🟢",
+  working = "🟡",
   needs_input = "🔔",
   idle = "💤",
   no_claude = "⚙",
@@ -22,6 +23,8 @@ local function calculate_card_state(wt_data)
     return "needs_input", ICONS.needs_input
   elseif claude_status and claude_status.status == "active" then
     return "active", ICONS.active
+  elseif claude_status and claude_status.status == "working" then
+    return "working", ICONS.working
   elseif claude_status and (claude_status.status == "paused" or claude_status.status == "idle") then
     return "idle", ICONS.idle
   else
@@ -40,6 +43,8 @@ local function format_claude_section(claude_status)
 
   if claude_status.status == "active" then
     status_text = "Active"
+  elseif claude_status.status == "working" then
+    status_text = "Working"
   elseif claude_status.status == "needs_input" then
     status_text = "Needs Input ⚠"
   elseif claude_status.status == "paused" then
@@ -156,9 +161,14 @@ function M.render_card(wt_data, card_width, is_selected, is_current)
   table.insert(lines, corner_tl .. string.rep(border_char, card_width - 2) .. corner_tr)
 
   -- Header: icon + branch name (line 2)
-  local header = string.format("%s %s", icon, wt_data.branch)
+  -- Add hidden indicator if worktree is hidden
+  local hidden_prefix = wt_data.is_hidden and "○ " or ""
+  local header = string.format("%s%s %s", hidden_prefix, icon, wt_data.branch)
   if is_current then
     header = header .. " [current]"
+  end
+  if wt_data.is_hidden then
+    header = header .. " [hidden]"
   end
   local header_line = vertical ..
       " " .. header .. string.rep(" ", card_width - 4 - vim.fn.strwidth(header)) .. " " .. vertical

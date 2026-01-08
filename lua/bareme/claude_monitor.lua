@@ -161,7 +161,7 @@ local function detect_running_sessions()
           path = wt.path,
           status = "active",
           detected = "process",
-          last_activity = os.time(),
+          -- Don't set last_activity here - let it be determined by actual events
           message_count = 0,
           needs_input_count = 0,
           error_count = 0,
@@ -178,14 +178,17 @@ local function detect_running_sessions()
 end
 
 -- Get Claude session stats by worktree
-function M.get_session_stats()
+-- skip_process_detection: if true, skips slow lsof calls (for initial dashboard load)
+function M.get_session_stats(skip_process_detection)
   local file_path = get_claude_events_file()
   local stats = {}
 
-  -- First, try to detect via process inspection
-  local running_sessions = detect_running_sessions()
-  for branch, session in pairs(running_sessions) do
-    stats[branch] = session
+  -- First, try to detect via process inspection (skip on initial load for speed)
+  if not skip_process_detection then
+    local running_sessions = detect_running_sessions()
+    for branch, session in pairs(running_sessions) do
+      stats[branch] = session
+    end
   end
 
   -- Then merge with hook-based events (if file exists)
@@ -224,7 +227,7 @@ function M.get_session_stats()
           end
 
           -- Update last activity (keep the most recent)
-          if event.timestamp and event.timestamp > wt_stats.last_activity then
+          if event.timestamp and (not wt_stats.last_activity or event.timestamp > wt_stats.last_activity) then
             wt_stats.last_activity = event.timestamp
           end
         end
@@ -244,7 +247,9 @@ function M.get_session_stats()
           wt_stats.status = "idle"
         elseif idle_time > 300 then -- 5 minutes
           wt_stats.status = "paused"
-        else
+        elseif idle_time > 60 then -- 1-5 minutes = working
+          wt_stats.status = "working"
+        else -- < 1 minute = active
           wt_stats.status = "active"
         end
       end
