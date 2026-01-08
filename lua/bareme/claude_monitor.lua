@@ -121,8 +121,22 @@ function M.stop_watching()
   end
 end
 
--- Detect running Claude sessions via process inspection
+-- Cache for process detection (to avoid frequent lsof calls)
+local process_cache = {
+  sessions = {},
+  last_check = 0,
+  ttl = 10000, -- Check processes every 10 seconds only
+}
+
+-- Detect running Claude sessions via process inspection (cached)
 local function detect_running_sessions()
+  local now = vim.loop.now()
+
+  -- Return cached result if still valid
+  if process_cache.sessions and (now - process_cache.last_check) < process_cache.ttl then
+    return process_cache.sessions
+  end
+
   local git = require("bareme.git")
   local worktrees = git.list_worktrees()
   local sessions = {}
@@ -155,6 +169,10 @@ local function detect_running_sessions()
       end
     end
   end
+
+  -- Update cache
+  process_cache.sessions = sessions
+  process_cache.last_check = now
 
   return sessions
 end
@@ -190,20 +208,22 @@ function M.get_session_stats()
 
           local wt_stats = stats[event.worktree]
 
-          -- Update counts
+          -- Update based on event type
           if event.event == "message" then
-            wt_stats.message_count = wt_stats.message_count + 1
+            -- Use the count from the event itself (not cumulative)
+            if event.count then
+              wt_stats.message_count = event.count
+            end
             if wt_stats.status ~= "needs_input" then
               wt_stats.status = "active"
             end
           elseif event.event == "needs_input" then
-            wt_stats.needs_input_count = wt_stats.needs_input_count + 1
             wt_stats.status = "needs_input"
           elseif event.event == "error" then
             wt_stats.error_count = wt_stats.error_count + 1
           end
 
-          -- Update last activity
+          -- Update last activity (keep the most recent)
           if event.timestamp and event.timestamp > wt_stats.last_activity then
             wt_stats.last_activity = event.timestamp
           end

@@ -154,6 +154,25 @@ end, {
   desc = "Clean up orphaned port allocations",
 })
 
+-- Default keymaps
+-- Quick access to dashboard
+vim.keymap.set("n", "<C-s>", function()
+  bareme.show_monitor()
+end, { desc = "Open Bareme Dashboard" })
+
+-- Leader keymaps for other actions
+vim.keymap.set("n", "<leader>ws", function()
+  bareme.switch_worktree()
+end, { desc = "Switch Worktree" })
+
+vim.keymap.set("n", "<leader>wc", function()
+  bareme.create_worktree()
+end, { desc = "Create Worktree" })
+
+vim.keymap.set("n", "<leader>wd", function()
+  bareme.delete_worktree()
+end, { desc = "Delete Worktree" })
+
 -- Start Claude monitoring on plugin load
 local claude_monitor = require("bareme.claude_monitor")
 claude_monitor.start_watching()
